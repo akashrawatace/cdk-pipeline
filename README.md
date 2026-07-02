@@ -143,6 +143,27 @@ After deployment, the stack exports:
 | `PipelineName` | CodePipeline name |
 
 
+## Security & Static Analysis (Checkov)
+
+This repository integrates **Checkov** to scan both the CDK and Terraform codebases for security and compliance issues.
+
+### 1. Local CDK Scanning
+To check the CDK-generated CloudFormation templates before deploying:
+1. Ensure Checkov is installed locally (e.g., via `pip install checkov` or using Docker).
+2. Run:
+   ```bash
+   npm run checkov
+   ```
+This synthesizes the templates and runs Checkov against the output `cdk.out/` folder using configurations in `.checkov.yaml`.
+
+### 2. CI/CD Pipeline Scanning
+Checkov is integrated as an automated security gate in the CodePipeline **Plan** stage. During the CodeBuild execution:
+1. Checkov is installed automatically in the build container.
+2. It scans the source files (`checkov -d . --framework terraform`).
+3. If security vulnerabilities are found, the build fails, preventing the pipeline from advancing to the manual approval or apply stages.
+
+---
+
 ## Useful Commands
 
 | Command | Purpose |
@@ -152,6 +173,7 @@ After deployment, the stack exports:
 | `npm run synth` | Synthesize CloudFormation template |
 | `npm run diff` | Show diff against deployed stack |
 | `npm run deploy` | Deploy the pipeline stack |
+| `npm run checkov` | Synthesize CDK and run local Checkov scan |
 
 ---
 

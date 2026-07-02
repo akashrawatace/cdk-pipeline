@@ -1,0 +1,7 @@
+directory:
+  - cdk.out
+framework:
+  - cloudformation
+quiet: false
+soft-fail: false
+output: cli

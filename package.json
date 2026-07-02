@@ -10,7 +10,8 @@
     "cdk": "cdk",
     "deploy": "cdk deploy",
     "synth": "cdk synth",
-    "diff": "cdk diff"
+    "diff": "cdk diff",
+    "checkov": "cdk synth && checkov --config-file .checkov.yaml"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

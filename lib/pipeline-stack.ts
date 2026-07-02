@@ -174,10 +174,16 @@ export class PipelineStack extends cdk.Stack {
         phases: {
           install: {
             'runtime-versions': { python: '3.11' },
-            commands: installTerraformCommands,
+            commands: [
+              ...installTerraformCommands,
+              'pip3 install --upgrade pip',
+              'pip3 install checkov',
+            ],
           },
           build: {
             commands: [
+              'echo "Running Checkov static code analysis on Terraform code..."',
+              'checkov -d . --framework terraform',
               'terraform init -no-color',
               'terraform plan -no-color 2>&1 | tee /tmp/plan-output.txt',
             ],
