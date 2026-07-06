@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project implements an Infrastructure as Code (IaC) deployment pipeline using **AWS CDK** and **Terraform**. The CDK stack bootstraps the supporting infrastructure (pipeline, state storage, IAM), and the pipeline orchestrates Terraform to deploy the landing zone.
+This project implements an Infrastructure as Code (IaC) deployment pipeline using **AWS CDK** and **Terraform**. The CDK app bootstraps the supporting infrastructure (pipeline, state storage, IAM) in a primary and secondary AWS region, and the pipeline orchestrates Terraform to deploy the landing zone.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -42,7 +42,20 @@ This project implements an Infrastructure as Code (IaC) deployment pipeline usin
                       │
                       ▼
 ┌─────────────────────────────────────────────────────────┐
-│          4. Landing Zone (Terraform)                    │
+│          4. Cross-Region Resilience                     │
+│                                                         │
+│   Primary commit ──► EventBridge ──► CodeBuild mirror   │
+│                         │                               │
+│                         ▼                               │
+│                  Secondary CodeCommit                   │
+│                                                         │
+│   Secondary watchdog checks primary pipeline health     │
+│   and starts the standby pipeline during failover.      │
+└─────────────────────┬───────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│          5. Landing Zone (Terraform)                    │
 │                                                         │
 │   AWS Org OUs + Accounts                                │
 │   TGW VPCs + Fortigate                                  │
@@ -67,25 +80,47 @@ npm install
 npx cdk bootstrap 
 ```
 
-### 3. Deploy the Pipeline
+### 3. Deploy the Pipelines
 
 ```bash
-npm run deploy
+npm run deploy -- --all
+```
+
+The CDK app creates:
+- `PipelineStackPrimary` in `CDK_DEFAULT_REGION` or `ap-southeast-1`
+- `PipelineStackSecondary` in `SECONDARY_REGION`, the `secondaryRegion` CDK context value, or `ap-south-1`
+
+Example:
+
+```bash
+set SECONDARY_REGION=ap-south-1
+npm run deploy -- --all
 ```
 
 ### 4. Pipeline Execution
 
-1. **Source** — automatically triggers on push to `main`
+1. **Source** — primary pipeline automatically triggers on push to `main`
 2. **Plan** — runs `terraform plan`, preview saved as artifact
 3. **Approval** — email sent to `akash.rawat@acelucid.com`; review and approve via the AWS Console
 4. **Apply** — runs `terraform apply -auto-approve` to deploy the landing zone
+
+The secondary pipeline is created as a standby pipeline. It does not start directly from replicated commits unless `activeActiveSecondary` is enabled in CDK.
 
 ---
 
 ## Component Details
 
 ### CodeCommit Repository (`infra-repo`)
-Stores all Terraform infrastructure code. Pushes to the `main` branch trigger the pipeline.
+Stores all Terraform infrastructure code. Pushes to the `main` branch trigger the primary pipeline.
+
+Because CodeCommit is region-scoped and has no native replication, the primary stack also creates a CodeBuild mirror project. An EventBridge rule listens for `referenceCreated` and `referenceUpdated` events on `main`, then starts the mirror project. The mirror project uses the AWS CodeCommit Git credential helper to:
+
+```bash
+git clone --mirror "$PRIMARY_REPO_URL" /tmp/infra-repo.git
+git push --mirror "$SECONDARY_REPO_URL"
+```
+
+This copies branches, tags, and commit history to the secondary region repository.
 
 ### S3 Bucket (Terraform State)
 - Versioning enabled for state history and rollback
@@ -127,6 +162,37 @@ Sends email notifications for manual approval requests when a new plan is ready 
 - **Approval** — Manual approval with SNS notification
 - **Apply** — CodeBuild action
 
+### Cross-Region Failover
+
+The secondary stack creates a scheduled Node.js Lambda watchdog. Every 5 minutes by default it calls `ListPipelineExecutions` for the primary pipeline in the primary region.
+
+Failover starts the secondary pipeline when either condition is true:
+- The latest primary pipeline execution is in a terminal failure state (`Failed`, `Cancelled`, `Stopped`, or `Stopping`)
+- The watchdog cannot reach the primary pipeline for `failoverFailureThreshold` consecutive checks, defaulting to 3
+
+The failure counter is stored in Systems Manager Parameter Store in the secondary region. This avoids depending on the primary region to publish an outage event.
+
+Lambda source code lives under `lambda/`. The failover watchdog is implemented in TypeScript at `lambda/failover-monitor/index.ts` and bundled by CDK with `NodejsFunction`, so future functions can use the same folder pattern.
+
+### Active-Standby vs Active-Active
+
+The default implementation is active-standby:
+- Primary commits trigger primary builds and deploys
+- Primary commits are mirrored to the secondary repository
+- Secondary commits do not automatically start the secondary pipeline
+- The secondary watchdog starts the secondary pipeline during failover
+
+An active-active variant is simpler operationally: set `activeActiveSecondary: true` on the secondary stack so replicated commits also trigger the secondary pipeline. This gives faster regional independence, but both regions can attempt Terraform operations for the same change. Only use that mode if your Terraform state locking and deployment targets are designed for concurrent or duplicate executions.
+
+### Terraform State During Failover
+
+The CDK stack still creates an S3 state bucket and DynamoDB lock table in each region. For production failover, make the Terraform backend region-aware and resilient before allowing the secondary pipeline to apply:
+- Use S3 Cross-Region Replication or a controlled backup/restore process for the state object
+- Use a DynamoDB Global Table or another replicated lock strategy for Terraform state locking
+- Configure Terraform with partial backend settings so CodeBuild can pass the correct bucket, table, and region at `terraform init`
+
+Without shared or replicated state, the standby pipeline can build and plan but applying from the secondary region may see an empty or stale state file.
+
 ---
 
 ## CDK Stack Outputs
@@ -141,6 +207,10 @@ After deployment, the stack exports:
 | `PlanProjectName` | CodeBuild plan project name |
 | `ApplyProjectName` | CodeBuild apply project name |
 | `PipelineName` | CodePipeline name |
+| `RegionRole` | `primary` or `secondary` |
+| `SecondaryRepoCloneUrl` | Secondary CodeCommit HTTPS URL, primary stack only |
+| `ReplicationProjectName` | CodeBuild mirror project, primary stack only |
+| `FailoverMonitorName` | Lambda watchdog, secondary stack only |
 
 
 ## Security & Static Analysis (Checkov)

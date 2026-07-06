@@ -8,6 +8,8 @@ describe('PipelineStack', () => {
     approvalEmail: 'test@example.com',
     terraformVersion: '1.9.8',
     env: { account: '123456789012', region: 'ap-southeast-1' },
+    primaryRegion: 'ap-southeast-1',
+    secondaryRegion: 'ap-south-1',
   });
   const template = Template.fromStack(stack);
 
@@ -68,7 +70,7 @@ describe('PipelineStack', () => {
   });
 
   test('creates both CodeBuild projects', () => {
-    template.resourceCountIs('AWS::CodeBuild::Project', 2);
+    template.resourceCountIs('AWS::CodeBuild::Project', 3);
   });
 
   test('creates CodePipeline with all stages', () => {
@@ -80,6 +82,60 @@ describe('PipelineStack', () => {
         Match.objectLike({ Name: 'Approval' }),
         Match.objectLike({ Name: 'Apply' }),
       ],
+    });
+  });
+
+  test('creates a CodeCommit replication trigger in the primary region', () => {
+    template.hasResourceProperties('AWS::Events::Rule', {
+      EventPattern: {
+        source: ['aws.codecommit'],
+        'detail-type': ['CodeCommit Repository State Change'],
+        detail: {
+          event: ['referenceCreated', 'referenceUpdated'],
+          repositoryName: ['infra-repo'],
+          referenceName: ['main'],
+        },
+      },
+    });
+
+    template.hasResourceProperties('AWS::CodeBuild::Project', {
+      Description:
+        'Mirrors infra-repo commits from ap-southeast-1 to ap-south-1',
+    });
+  });
+});
+
+describe('PipelineStack secondary region', () => {
+  const app = new cdk.App();
+  const stack = new PipelineStack(app, 'TestSecondaryPipelineStack', {
+    approvalEmail: 'test@example.com',
+    terraformVersion: '1.9.8',
+    env: { account: '123456789012', region: 'ap-south-1' },
+    regionRole: 'secondary',
+    primaryRegion: 'ap-southeast-1',
+    secondaryRegion: 'ap-south-1',
+  });
+  const template = Template.fromStack(stack);
+
+  test('creates standby secondary pipeline and failover monitor', () => {
+    template.hasResourceProperties('AWS::CodePipeline::Pipeline', {
+      Name: 'infra-deployment-pipeline-failover',
+    });
+
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Handler: 'index.handler',
+      Runtime: 'nodejs20.x',
+      Environment: {
+        Variables: Match.objectLike({
+          PRIMARY_REGION: 'ap-southeast-1',
+          PRIMARY_PIPELINE_NAME: 'infra-deployment-pipeline',
+          SECONDARY_PIPELINE_NAME: 'infra-deployment-pipeline-failover',
+        }),
+      },
+    });
+
+    template.hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'rate(5 minutes)',
     });
   });
 });
