@@ -89,6 +89,9 @@ npm run deploy -- --all
 The CDK app creates:
 - `PipelineStackPrimary` in `CDK_DEFAULT_REGION` or `ap-southeast-1`
 - `PipelineStackSecondary` in `SECONDARY_REGION`, the `secondaryRegion` CDK context value, or `ap-south-1`
+- A primary state bucket named `tf-state-file-ugi-demo-bucket` by default
+- A secondary state bucket named `tf-state-file-ugi-demo-bucket-<secondary-region>` by default
+- DynamoDB Global Tables named `tf-lock-ugi-demo-table` and `tf-deployment-control-ugi-demo-table`
 
 Example:
 
@@ -127,12 +130,16 @@ This copies branches, tags, and commit history to the secondary region repositor
 - Server-side encryption (SSE-S3)
 - Public access blocked
 - SSL enforcement
+- One-way Cross-Region Replication from the primary state bucket to the secondary state bucket
 
-### DynamoDB Table (State Locking)
+S3 bucket names are globally unique. The primary bucket keeps the configured name `tf-state-file-ugi-demo-bucket`; the secondary bucket uses `tf-state-file-ugi-demo-bucket-<secondary-region>` unless `secondaryStateBucketName` is provided through CDK context.
+
+### DynamoDB Global Tables
 - Partition key: `LockID` (String)
 - Pay-per-request billing
 - Point-in-time recovery enabled
-- Prevents concurrent Terraform operations
+- `tf-lock-ugi-demo-table` is the Terraform backend lock table, replicated to both regions
+- `tf-deployment-control-ugi-demo-table` stores deployment mode and the global apply mutex
 
 ### IAM Roles
 | Role | Purpose | Permissions |
@@ -153,7 +160,10 @@ Sends email notifications for manual approval requests when a new plan is ready 
 ### CodeBuild Apply
 - Linux (Standard 7.0, medium)
 - Installs Terraform 1.9.8
-- Runs `terraform init && terraform apply -auto-approve`
+- Runs `terraform init` with region-specific backend config
+- Checks deployment mode before apply
+- Acquires a global DynamoDB mutex before `terraform apply`
+- Releases the mutex when the build exits
 - Outputs apply log to artifact
 
 ### CodePipeline
@@ -172,6 +182,17 @@ Failover starts the secondary pipeline when either condition is true:
 
 The failure counter is stored in Systems Manager Parameter Store in the secondary region. This avoids depending on the primary region to publish an outage event.
 
+Before starting the secondary pipeline, the watchdog writes this item to `tf-deployment-control-ugi-demo-table`:
+
+```json
+{
+  "LockID": "deployment-mode",
+  "Mode": "failover"
+}
+```
+
+That fences the primary apply project. Primary can only apply when deployment mode is missing or set to `primary`; secondary can only apply when deployment mode is `failover`.
+
 Lambda source code lives under `lambda/`. The failover watchdog is implemented in TypeScript at `lambda/failover-monitor/index.ts` and bundled by CDK with `NodejsFunction`, so future functions can use the same folder pattern.
 
 ### Active-Standby vs Active-Active
@@ -184,14 +205,41 @@ The default implementation is active-standby:
 
 An active-active variant is simpler operationally: set `activeActiveSecondary: true` on the secondary stack so replicated commits also trigger the secondary pipeline. This gives faster regional independence, but both regions can attempt Terraform operations for the same change. Only use that mode if your Terraform state locking and deployment targets are designed for concurrent or duplicate executions.
 
-### Terraform State During Failover
+### Terraform State Failover Safety
 
-The CDK stack still creates an S3 state bucket and DynamoDB lock table in each region. For production failover, make the Terraform backend region-aware and resilient before allowing the secondary pipeline to apply:
-- Use S3 Cross-Region Replication or a controlled backup/restore process for the state object
-- Use a DynamoDB Global Table or another replicated lock strategy for Terraform state locking
-- Configure Terraform with partial backend settings so CodeBuild can pass the correct bucket, table, and region at `terraform init`
+Normal mode:
 
-Without shared or replicated state, the standby pipeline can build and plan but applying from the secondary region may see an empty or stale state file.
+```text
+Primary pipeline applies
+Primary S3 state bucket -> replicated to secondary S3 state bucket
+Deployment mode: primary or missing
+```
+
+Failover mode:
+
+```text
+Secondary watchdog sets deployment-mode=failover
+Secondary pipeline applies against the secondary state bucket
+Primary apply is blocked by the deployment-mode gate
+```
+
+Every apply build also tries to create this item before running Terraform:
+
+```json
+{
+  "LockID": "terraform-apply-lock",
+  "Owner": "<region>:<codebuild-build-id>"
+}
+```
+
+The write uses a DynamoDB conditional expression, so only one pipeline can own the apply lock at a time. The lock intentionally has no automatic expiry; if a build dies without cleanup, an operator should verify no apply is still running before manually deleting the stale lock.
+
+Failback is intentionally manual:
+- Stop or disable secondary applies
+- Copy/promote the known-good secondary state object back to the primary state bucket
+- Run a primary-region `terraform plan` against the promoted state
+- Set `deployment-mode=primary` in the deployment control table
+- Re-enable primary apply
 
 ---
 
@@ -203,7 +251,8 @@ After deployment, the stack exports:
 |---|---|
 | `CodeCommitRepoUrl` | HTTPS URL to clone the repo |
 | `StateBucketName` | S3 bucket for Terraform state |
-| `LockTableName` | DynamoDB table for state locking |
+| `LockTableName` | DynamoDB Global Table for Terraform state locking |
+| `DeploymentControlTableName` | DynamoDB Global Table for deployment mode and apply mutex |
 | `PlanProjectName` | CodeBuild plan project name |
 | `ApplyProjectName` | CodeBuild apply project name |
 | `PipelineName` | CodePipeline name |

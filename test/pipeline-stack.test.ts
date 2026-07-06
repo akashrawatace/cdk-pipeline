@@ -21,6 +21,7 @@ describe('PipelineStack', () => {
 
   test('creates S3 bucket for Terraform state', () => {
     template.hasResourceProperties('AWS::S3::Bucket', {
+      BucketName: 'tf-state-file-ugi-demo-bucket',
       VersioningConfiguration: { Status: 'Enabled' },
       PublicAccessBlockConfiguration: {
         BlockPublicAcls: true,
@@ -28,13 +29,29 @@ describe('PipelineStack', () => {
         IgnorePublicAcls: true,
         RestrictPublicBuckets: true,
       },
+      ReplicationConfiguration: Match.objectLike({
+        Rules: [
+          Match.objectLike({
+            Status: 'Enabled',
+          }),
+        ],
+      }),
     });
   });
 
-  test('creates DynamoDB table for state locking', () => {
-    template.hasResourceProperties('AWS::DynamoDB::Table', {
+  test('creates DynamoDB global tables for state locking and deployment control', () => {
+    template.resourceCountIs('AWS::DynamoDB::GlobalTable', 2);
+    template.hasResourceProperties('AWS::DynamoDB::GlobalTable', {
+      TableName: 'tf-lock-ugi-demo-table',
       KeySchema: [{ AttributeName: 'LockID', KeyType: 'HASH' }],
       BillingMode: 'PAY_PER_REQUEST',
+      Replicas: [
+        Match.objectLike({ Region: 'ap-southeast-1' }),
+        Match.objectLike({ Region: 'ap-south-1' }),
+      ],
+    });
+    template.hasResourceProperties('AWS::DynamoDB::GlobalTable', {
+      TableName: 'tf-deployment-control-ugi-demo-table',
     });
   });
 
@@ -103,6 +120,24 @@ describe('PipelineStack', () => {
         'Mirrors infra-repo commits from ap-southeast-1 to ap-south-1',
     });
   });
+
+  test('adds deployment mode and apply mutex checks to apply project', () => {
+    template.hasResourceProperties('AWS::CodeBuild::Project', {
+      Description: 'Applies approved Terraform infrastructure changes',
+      Environment: Match.objectLike({
+        EnvironmentVariables: Match.arrayWith([
+          Match.objectLike({
+            Name: 'DEPLOYMENT_CONTROL_TABLE_NAME',
+            Value: 'tf-deployment-control-ugi-demo-table',
+          }),
+          Match.objectLike({
+            Name: 'EXPECTED_DEPLOYMENT_MODE',
+            Value: 'primary',
+          }),
+        ]),
+      }),
+    });
+  });
 });
 
 describe('PipelineStack secondary region', () => {
@@ -130,6 +165,7 @@ describe('PipelineStack secondary region', () => {
           PRIMARY_REGION: 'ap-southeast-1',
           PRIMARY_PIPELINE_NAME: 'infra-deployment-pipeline',
           SECONDARY_PIPELINE_NAME: 'infra-deployment-pipeline-failover',
+          DEPLOYMENT_CONTROL_TABLE_NAME: 'tf-deployment-control-ugi-demo-table',
         }),
       },
     });

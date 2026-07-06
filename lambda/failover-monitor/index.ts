@@ -3,6 +3,7 @@ import {
   ListPipelineExecutionsCommand,
   StartPipelineExecutionCommand,
 } from '@aws-sdk/client-codepipeline';
+import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
 import {
   GetParameterCommand,
   ParameterNotFound,
@@ -14,10 +15,12 @@ const primary = new CodePipelineClient({
   region: mustGetEnv('PRIMARY_REGION'),
 });
 const secondary = new CodePipelineClient({});
+const dynamodb = new DynamoDBClient({});
 const ssm = new SSMClient({});
 
 const primaryPipelineName = mustGetEnv('PRIMARY_PIPELINE_NAME');
 const secondaryPipelineName = mustGetEnv('SECONDARY_PIPELINE_NAME');
+const deploymentControlTableName = mustGetEnv('DEPLOYMENT_CONTROL_TABLE_NAME');
 const failureCountParameter = mustGetEnv('FAILURE_COUNT_PARAMETER');
 const lastFailoverParameter = mustGetEnv('LAST_FAILOVER_PARAMETER');
 const failureThreshold = Number.parseInt(mustGetEnv('FAILURE_THRESHOLD'), 10);
@@ -115,6 +118,8 @@ async function startSecondary(
     };
   }
 
+  await setDeploymentMode(reason);
+
   const response = await secondary.send(
     new StartPipelineExecutionCommand({
       name: secondaryPipelineName,
@@ -139,6 +144,21 @@ async function secondaryIsRunning(): Promise<boolean> {
   const latestStatus = executions.pipelineExecutionSummaries?.[0]?.status;
 
   return latestStatus !== undefined && runningStatuses.has(latestStatus);
+}
+
+async function setDeploymentMode(reason: string): Promise<void> {
+  await dynamodb.send(
+    new PutItemCommand({
+      TableName: deploymentControlTableName,
+      Item: {
+        LockID: { S: 'deployment-mode' },
+        Mode: { S: 'failover' },
+        UpdatedBy: { S: secondaryPipelineName },
+        Reason: { S: reason },
+        UpdatedAt: { S: new Date().toISOString() },
+      },
+    }),
+  );
 }
 
 async function getParameter(name: string, defaultValue: string): Promise<string> {

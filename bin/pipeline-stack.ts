@@ -10,17 +10,31 @@ const secondaryRegion =
   app.node.tryGetContext('secondaryRegion') ||
   process.env.SECONDARY_REGION ||
   'ap-south-1';
+const stateBucketName =
+  app.node.tryGetContext('stateBucketName') || 'tf-state-file-ugi-demo-bucket';
+const secondaryStateBucketName =
+  app.node.tryGetContext('secondaryStateBucketName') ||
+  `${stateBucketName}-${secondaryRegion}`;
+const terraformLockTableName =
+  app.node.tryGetContext('terraformLockTableName') || 'tf-lock-ugi-demo-table';
+const deploymentControlTableName =
+  app.node.tryGetContext('deploymentControlTableName') ||
+  'tf-deployment-control-ugi-demo-table';
 
 const commonProps = {
   approvalEmail: 'akash.rawat@acelucid.com',
   terraformVersion: '1.9.8',
   primaryRegion,
   secondaryRegion,
+  stateBucketName,
+  secondaryStateBucketName,
+  terraformLockTableName,
+  deploymentControlTableName,
   description:
     'Bootstrapping and supporting infrastructure for Terraform-based landing zone deployment',
 };
 
-new PipelineStack(app, 'PipelineStackPrimary', {
+const primaryStack = new PipelineStack(app, 'PipelineStackPrimary', {
   env: {
     account,
     region: primaryRegion,
@@ -29,7 +43,7 @@ new PipelineStack(app, 'PipelineStackPrimary', {
   regionRole: 'primary',
 });
 
-new PipelineStack(app, 'PipelineStackSecondary', {
+const secondaryStack = new PipelineStack(app, 'PipelineStackSecondary', {
   env: {
     account,
     region: secondaryRegion,
@@ -37,5 +51,7 @@ new PipelineStack(app, 'PipelineStackSecondary', {
   ...commonProps,
   regionRole: 'secondary',
 });
+
+primaryStack.addDependency(secondaryStack);
 
 app.synth();
