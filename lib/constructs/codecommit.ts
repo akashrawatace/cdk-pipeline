@@ -6,7 +6,7 @@ import * as events_targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 
-export interface CodeCommitReplicationProps {
+export interface CodeCommitResourcesProps {
   repo: codecommit.Repository;
   repositoryName: string;
   branchName: string;
@@ -14,11 +14,11 @@ export interface CodeCommitReplicationProps {
   secondaryRegion: string;
 }
 
-export class CodeCommitReplication extends Construct {
+export class CodeCommitResources extends Construct {
   readonly replicationProject: codebuild.Project;
   readonly secondaryRepoCloneUrl: string;
 
-  constructor(scope: Construct, id: string, props: CodeCommitReplicationProps) {
+  constructor(scope: Construct, id: string, props: CodeCommitResourcesProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);

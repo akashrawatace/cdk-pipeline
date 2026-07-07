@@ -87,8 +87,8 @@ npm run deploy -- --all
 ```
 
 The CDK app creates:
-- `PipelineStackPrimary` in `CDK_DEFAULT_REGION` or `ap-southeast-1`
-- `PipelineStackSecondary` in `SECONDARY_REGION`, the `secondaryRegion` CDK context value, or `ap-south-1`
+- `PipelineStackPrimary` in `CDK_DEFAULT_REGION` or `ap-south-1`
+- `PipelineStackSecondary` in `SECONDARY_REGION`, the `secondaryRegion` CDK context value, or `ap-southeast-1`
 - A primary state bucket named `tf-state-file-ugi-demo-bucket` by default
 - A secondary state bucket named `tf-state-file-ugi-demo-bucket-<secondary-region>` by default
 - DynamoDB Global Tables named `tf-lock-ugi-demo-table` and `tf-deployment-control-ugi-demo-table`
@@ -96,7 +96,7 @@ The CDK app creates:
 Example:
 
 ```bash
-set SECONDARY_REGION=ap-south-1
+set SECONDARY_REGION=ap-southeast-1
 npm run deploy -- --all
 ```
 

@@ -6,10 +6,10 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import { Construct } from 'constructs';
-import { CodeCommitReplication } from './constructs/codecommit-replication';
-import { FailoverMonitor } from './constructs/failover-monitor';
-import { StateBackend } from './constructs/state-backend';
-import { TerraformBuildProjects } from './constructs/terraform-build-projects';
+import { CodeCommitResources } from './constructs/codecommit';
+import { FailoverLambda } from './constructs/lambda';
+import { Storage } from './constructs/storage';
+import { CodeBuildProjects } from './constructs/codebuild';
 import { PipelineRegionRole, PipelineStackProps } from './types';
 
 export { PipelineRegionRole, PipelineStackProps };
@@ -22,8 +22,8 @@ export class PipelineStack extends cdk.Stack {
       approvalEmail,
       terraformVersion,
       regionRole = 'primary',
-      primaryRegion = cdk.Stack.of(this).region,
-      secondaryRegion = 'us-east-1',
+      primaryRegion = 'ap-south-1',
+      secondaryRegion = 'ap-southeast-1',
       repositoryName = 'infra-repo',
       branchName = 'main',
       primaryPipelineName = 'infra-deployment-pipeline',
@@ -53,7 +53,7 @@ export class PipelineStack extends cdk.Stack {
           : 'Secondary replicated Terraform infrastructure code repository',
     });
 
-    const backend = new StateBackend(this, 'StateBackend', {
+    const backend = new Storage(this, 'StateBackend', {
       regionRole,
       primaryRegion,
       secondaryRegion,
@@ -70,7 +70,7 @@ export class PipelineStack extends cdk.Stack {
       new subscriptions.EmailSubscription(approvalEmail),
     );
 
-    const buildProjects = new TerraformBuildProjects(
+    const buildProjects = new CodeBuildProjects(
       this,
       'TerraformBuildProjects',
       {
@@ -101,7 +101,7 @@ export class PipelineStack extends cdk.Stack {
     });
 
     if (regionRole === 'primary') {
-      const replication = new CodeCommitReplication(
+      const replication = new CodeCommitResources(
         this,
         'CodeCommitReplication',
         {
@@ -124,7 +124,7 @@ export class PipelineStack extends cdk.Stack {
     }
 
     if (regionRole === 'secondary' && !activeActiveSecondary) {
-      const monitor = new FailoverMonitor(this, 'FailoverMonitor', {
+      const monitor = new FailoverLambda(this, 'FailoverMonitor', {
         pipeline,
         primaryRegion,
         primaryPipelineName,
@@ -178,7 +178,7 @@ export class PipelineStack extends cdk.Stack {
 
   private createPipelineRole(
     repo: codecommit.Repository,
-    buildProjects: TerraformBuildProjects,
+    buildProjects: CodeBuildProjects,
     approvalTopic: sns.Topic,
   ): iam.Role {
     const pipelineRole = new iam.Role(this, 'PipelineRole', {
@@ -239,7 +239,7 @@ export class PipelineStack extends cdk.Stack {
     regionRole: PipelineRegionRole;
     activeActiveSecondary: boolean;
     approvalTopic: sns.Topic;
-    buildProjects: TerraformBuildProjects;
+    buildProjects: CodeBuildProjects;
   }): codepipeline.Pipeline {
     const {
       pipelineRole,

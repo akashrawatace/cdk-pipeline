@@ -4,7 +4,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { PipelineRegionRole } from '../types';
 
-export interface TerraformBuildProjectsProps {
+export interface CodeBuildProjectsProps {
   terraformVersion: string;
   regionRole: PipelineRegionRole;
   stateBucket: s3.Bucket;
@@ -14,13 +14,13 @@ export interface TerraformBuildProjectsProps {
   deploymentControlTableArn: string;
 }
 
-export class TerraformBuildProjects extends Construct {
+export class CodeBuildProjects extends Construct {
   readonly planProject: codebuild.PipelineProject;
   readonly applyProject: codebuild.PipelineProject;
   readonly planRole: iam.Role;
   readonly applyRole: iam.Role;
 
-  constructor(scope: Construct, id: string, props: TerraformBuildProjectsProps) {
+  constructor(scope: Construct, id: string, props: CodeBuildProjectsProps) {
     super(scope, id);
 
     const {

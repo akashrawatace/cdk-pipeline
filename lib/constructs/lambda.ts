@@ -8,7 +8,7 @@ import * as lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as path from 'path';
 import { Construct } from 'constructs';
 
-export interface FailoverMonitorProps {
+export interface FailoverLambdaProps {
   pipeline: codepipeline.Pipeline;
   primaryRegion: string;
   primaryPipelineName: string;
@@ -20,10 +20,10 @@ export interface FailoverMonitorProps {
   failoverOnPipelineFailure: boolean;
 }
 
-export class FailoverMonitor extends Construct {
+export class FailoverLambda extends Construct {
   readonly function: lambda_nodejs.NodejsFunction;
 
-  constructor(scope: Construct, id: string, props: FailoverMonitorProps) {
+  constructor(scope: Construct, id: string, props: FailoverLambdaProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);

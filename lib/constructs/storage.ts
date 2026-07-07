@@ -5,7 +5,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { PipelineRegionRole } from '../types';
 
-export interface StateBackendProps {
+export interface StorageProps {
   regionRole: PipelineRegionRole;
   primaryRegion: string;
   secondaryRegion: string;
@@ -15,14 +15,14 @@ export interface StateBackendProps {
   deploymentControlTableName: string;
 }
 
-export class StateBackend extends Construct {
+export class Storage extends Construct {
   readonly stateBucket: s3.Bucket;
   readonly terraformLockTableName: string;
   readonly terraformLockTableArn: string;
   readonly deploymentControlTableName: string;
   readonly deploymentControlTableArn: string;
 
-  constructor(scope: Construct, id: string, props: StateBackendProps) {
+  constructor(scope: Construct, id: string, props: StorageProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);
