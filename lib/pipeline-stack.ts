@@ -1,8 +1,9 @@
-import * as cdk from "aws-cdk-lib";
+﻿import * as cdk from "aws-cdk-lib";
 import * as codecommit from "aws-cdk-lib/aws-codecommit";
 import * as codepipeline from "aws-cdk-lib/aws-codepipeline";
 import * as codepipeline_actions from "aws-cdk-lib/aws-codepipeline-actions";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as s3 from "aws-cdk-lib/aws-s3";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as subscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import { Construct } from "constructs";
@@ -89,6 +90,13 @@ export class PipelineStack extends cdk.Stack {
       buildProjects,
       approvalTopic,
     );
+
+    const artifactBucket =
+      regionRole === "primary"
+        ? backend.primaryArtifactBucket
+        : backend.secondaryArtifactBucket;
+    artifactBucket.grantReadWrite(pipelineRole);
+
     const pipeline = this.createPipeline({
       pipelineRole,
       pipelineName,
@@ -98,6 +106,7 @@ export class PipelineStack extends cdk.Stack {
       activeActiveSecondary,
       approvalTopic,
       buildProjects,
+      artifactBucket,
     });
 
     if (regionRole === "primary") {
@@ -243,6 +252,7 @@ export class PipelineStack extends cdk.Stack {
     activeActiveSecondary: boolean;
     approvalTopic: sns.Topic;
     buildProjects: CodeBuildProjects;
+    artifactBucket: s3.IBucket;
   }): codepipeline.Pipeline {
     const {
       pipelineRole,
@@ -253,6 +263,7 @@ export class PipelineStack extends cdk.Stack {
       activeActiveSecondary,
       approvalTopic,
       buildProjects,
+      artifactBucket,
     } = props;
     const sourceOutput = new codepipeline.Artifact("SourceOutput");
     const planOutput = new codepipeline.Artifact("PlanOutput");
@@ -260,6 +271,7 @@ export class PipelineStack extends cdk.Stack {
     return new codepipeline.Pipeline(this, "DeploymentPipeline", {
       role: pipelineRole,
       pipelineName,
+      artifactBucket,
       stages: [
         {
           stageName: "Source",
