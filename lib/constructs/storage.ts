@@ -17,8 +17,7 @@ export interface StorageProps {
 
 export class Storage extends Construct {
   readonly stateBucket: s3.Bucket;
-  readonly primaryArtifactBucket: s3.Bucket;
-  readonly secondaryArtifactBucket: s3.Bucket;
+  readonly artifactBucket: s3.Bucket;
   readonly terraformLockTableName: string;
   readonly terraformLockTableArn: string;
   readonly deploymentControlTableName: string;
@@ -71,8 +70,11 @@ export class Storage extends Construct {
       ],
     });
 
-    this.primaryArtifactBucket = new s3.Bucket(this, "PrimaryArtifactBucket", {
-      bucketName: "primary-artifacts-ugi-demo-ap-south-1",
+    this.artifactBucket = new s3.Bucket(this, "ArtifactBucket", {
+      bucketName:
+        regionRole === "primary"
+          ? "primary-repo-artifacts-ugi-demo-ap-south-1"
+          : "secondary-repo-artifacts-ugi-demo-ap-southeast-1",
       versioned: true,
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -80,20 +82,6 @@ export class Storage extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
-
-    this.secondaryArtifactBucket = new s3.Bucket(
-      this,
-      "SecondaryArtifactBucket",
-      {
-        bucketName: "secondary-artifacts-ugi-demo-ap-southeast-1",
-        versioned: true,
-        encryption: s3.BucketEncryption.S3_MANAGED,
-        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-        enforceSSL: true,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
-        autoDeleteObjects: true,
-      },
-    );
 
     if (regionRole === "primary") {
       this.createGlobalTable(

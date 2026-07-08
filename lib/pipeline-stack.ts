@@ -91,10 +91,8 @@ export class PipelineStack extends cdk.Stack {
       approvalTopic,
     );
 
-    const artifactBucket =
-      regionRole === "primary"
-        ? backend.primaryArtifactBucket
-        : backend.secondaryArtifactBucket;
+    const artifactBucket = backend.artifactBucket;
+
     artifactBucket.grantReadWrite(pipelineRole);
 
     const pipeline = this.createPipeline({

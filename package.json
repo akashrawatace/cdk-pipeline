@@ -11,7 +11,10 @@
     "deploy": "cdk deploy",
     "synth": "cdk synth",
     "diff": "cdk diff",
-    "checkov": "cdk synth && checkov --config-file .checkov.yaml"
+    "checkov": "cdk synth && checkov --config-file .checkov.yaml",
+    "lint": "eslint",
+    "lint-fix": "eslint --fix"
+
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

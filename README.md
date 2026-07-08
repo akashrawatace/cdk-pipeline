@@ -321,5 +321,3 @@ Checkov is integrated as an automated security gate in the CodePipeline **Plan**
 - Secrets (if any) should use AWS Secrets Manager
 
 ---
-
-_Generated on: 2026-07-02_
