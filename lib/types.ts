@@ -1,6 +1,6 @@
-import * as cdk from 'aws-cdk-lib';
+import * as cdk from "aws-cdk-lib";
 
-export type PipelineRegionRole = 'primary' | 'secondary';
+export type PipelineRegionRole = "primary" | "secondary";
 
 export interface PipelineStackProps extends cdk.StackProps {
   approvalEmail: string;

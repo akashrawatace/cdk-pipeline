@@ -1,9 +1,9 @@
-import * as cdk from 'aws-cdk-lib';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as s3 from 'aws-cdk-lib/aws-s3';
-import { Construct } from 'constructs';
-import { PipelineRegionRole } from '../types';
+import * as cdk from "aws-cdk-lib";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as s3 from "aws-cdk-lib/aws-s3";
+import { Construct } from "constructs";
+import { PipelineRegionRole } from "../types";
 
 export interface StorageProps {
   regionRole: PipelineRegionRole;
@@ -39,23 +39,24 @@ export class Storage extends Construct {
     this.terraformLockTableName = terraformLockTableName;
     this.deploymentControlTableName = deploymentControlTableName;
 
-    const localRegion = regionRole === 'primary' ? primaryRegion : secondaryRegion;
+    const localRegion =
+      regionRole === "primary" ? primaryRegion : secondaryRegion;
     this.terraformLockTableArn = stack.formatArn({
-      service: 'dynamodb',
+      service: "dynamodb",
       region: localRegion,
-      resource: 'table',
+      resource: "table",
       resourceName: terraformLockTableName,
     });
     this.deploymentControlTableArn = stack.formatArn({
-      service: 'dynamodb',
+      service: "dynamodb",
       region: localRegion,
-      resource: 'table',
+      resource: "table",
       resourceName: deploymentControlTableName,
     });
 
-    this.stateBucket = new s3.Bucket(this, 'TerraformStateBucket', {
+    this.stateBucket = new s3.Bucket(this, "TerraformStateBucket", {
       bucketName:
-        regionRole === 'primary' ? stateBucketName : secondaryStateBucketName,
+        regionRole === "primary" ? stateBucketName : secondaryStateBucketName,
       versioned: true,
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -68,17 +69,21 @@ export class Storage extends Construct {
       ],
     });
 
-    if (regionRole === 'primary') {
-      this.createGlobalTable('TerraformLockGlobalTable', terraformLockTableName, [
-        primaryRegion,
-        secondaryRegion,
-      ]);
+    if (regionRole === "primary") {
       this.createGlobalTable(
-        'DeploymentControlGlobalTable',
+        "TerraformLockGlobalTable",
+        terraformLockTableName,
+        [primaryRegion, secondaryRegion],
+      );
+      this.createGlobalTable(
+        "DeploymentControlGlobalTable",
         deploymentControlTableName,
         [primaryRegion, secondaryRegion],
       );
-      this.configureOneWayStateReplication(secondaryRegion, secondaryStateBucketName);
+      this.configureOneWayStateReplication(
+        secondaryRegion,
+        secondaryStateBucketName,
+      );
     }
   }
 
@@ -89,17 +94,17 @@ export class Storage extends Construct {
   ): dynamodb.CfnGlobalTable {
     return new dynamodb.CfnGlobalTable(this, id, {
       tableName,
-      billingMode: 'PAY_PER_REQUEST',
+      billingMode: "PAY_PER_REQUEST",
       attributeDefinitions: [
         {
-          attributeName: 'LockID',
-          attributeType: 'S',
+          attributeName: "LockID",
+          attributeType: "S",
         },
       ],
       keySchema: [
         {
-          attributeName: 'LockID',
-          keyType: 'HASH',
+          attributeName: "LockID",
+          keyType: "HASH",
         },
       ],
       replicas: regions.map((region) => ({
@@ -117,41 +122,45 @@ export class Storage extends Construct {
   ) {
     const stack = cdk.Stack.of(this);
     const destinationBucketArn = stack.formatArn({
-      service: 's3',
-      region: '',
-      account: '',
+      service: "s3",
+      region: "",
+      account: "",
       resource: secondaryStateBucketName,
     });
 
-    const replicationRole = new iam.Role(this, 'TerraformStateReplicationRole', {
-      assumedBy: new iam.ServicePrincipal('s3.amazonaws.com'),
-      description:
-        'Allows S3 to replicate Terraform state from primary to secondary region',
-    });
+    const replicationRole = new iam.Role(
+      this,
+      "TerraformStateReplicationRole",
+      {
+        assumedBy: new iam.ServicePrincipal("s3.amazonaws.com"),
+        description:
+          "Allows S3 to replicate Terraform state from primary to secondary region",
+      },
+    );
 
     const replicationPolicy = new iam.Policy(
       this,
-      'TerraformStateReplicationPolicy',
+      "TerraformStateReplicationPolicy",
       {
         statements: [
           new iam.PolicyStatement({
-            actions: ['s3:GetReplicationConfiguration', 's3:ListBucket'],
+            actions: ["s3:GetReplicationConfiguration", "s3:ListBucket"],
             resources: [this.stateBucket.bucketArn],
           }),
           new iam.PolicyStatement({
             actions: [
-              's3:GetObjectVersionForReplication',
-              's3:GetObjectVersionAcl',
-              's3:GetObjectVersionTagging',
+              "s3:GetObjectVersionForReplication",
+              "s3:GetObjectVersionAcl",
+              "s3:GetObjectVersionTagging",
             ],
-            resources: [this.stateBucket.arnForObjects('*')],
+            resources: [this.stateBucket.arnForObjects("*")],
           }),
           new iam.PolicyStatement({
             actions: [
-              's3:ReplicateObject',
-              's3:ReplicateTags',
-              's3:ReplicateDelete',
-              's3:ObjectOwnerOverrideToBucketOwner',
+              "s3:ReplicateObject",
+              "s3:ReplicateTags",
+              "s3:ReplicateDelete",
+              "s3:ObjectOwnerOverrideToBucketOwner",
             ],
             resources: [`${destinationBucketArn}/*`],
           }),
@@ -166,16 +175,16 @@ export class Storage extends Construct {
       rules: [
         {
           id: `ReplicateTerraformStateTo${secondaryRegion}`,
-          status: 'Enabled',
+          status: "Enabled",
           deleteMarkerReplication: {
-            status: 'Disabled',
+            status: "Disabled",
           },
           destination: {
             bucket: destinationBucketArn,
-            storageClass: 'STANDARD',
+            storageClass: "STANDARD",
           },
           filter: {
-            prefix: '',
+            prefix: "",
           },
         },
       ],

@@ -2,38 +2,38 @@ import {
   CodePipelineClient,
   ListPipelineExecutionsCommand,
   StartPipelineExecutionCommand,
-} from '@aws-sdk/client-codepipeline';
-import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
+} from "@aws-sdk/client-codepipeline";
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import {
   GetParameterCommand,
   ParameterNotFound,
   PutParameterCommand,
   SSMClient,
-} from '@aws-sdk/client-ssm';
+} from "@aws-sdk/client-ssm";
 
 const primary = new CodePipelineClient({
-  region: mustGetEnv('PRIMARY_REGION'),
+  region: mustGetEnv("PRIMARY_REGION"),
 });
 const secondary = new CodePipelineClient({});
 const dynamodb = new DynamoDBClient({});
 const ssm = new SSMClient({});
 
-const primaryPipelineName = mustGetEnv('PRIMARY_PIPELINE_NAME');
-const secondaryPipelineName = mustGetEnv('SECONDARY_PIPELINE_NAME');
-const deploymentControlTableName = mustGetEnv('DEPLOYMENT_CONTROL_TABLE_NAME');
-const failureCountParameter = mustGetEnv('FAILURE_COUNT_PARAMETER');
-const lastFailoverParameter = mustGetEnv('LAST_FAILOVER_PARAMETER');
-const failureThreshold = Number.parseInt(mustGetEnv('FAILURE_THRESHOLD'), 10);
+const primaryPipelineName = mustGetEnv("PRIMARY_PIPELINE_NAME");
+const secondaryPipelineName = mustGetEnv("SECONDARY_PIPELINE_NAME");
+const deploymentControlTableName = mustGetEnv("DEPLOYMENT_CONTROL_TABLE_NAME");
+const failureCountParameter = mustGetEnv("FAILURE_COUNT_PARAMETER");
+const lastFailoverParameter = mustGetEnv("LAST_FAILOVER_PARAMETER");
+const failureThreshold = Number.parseInt(mustGetEnv("FAILURE_THRESHOLD"), 10);
 const failoverOnPipelineFailure =
-  mustGetEnv('FAILOVER_ON_PIPELINE_FAILURE').toLowerCase() === 'true';
+  mustGetEnv("FAILOVER_ON_PIPELINE_FAILURE").toLowerCase() === "true";
 
 const terminalFailureStatuses = new Set([
-  'Failed',
-  'Cancelled',
-  'Stopped',
-  'Stopping',
+  "Failed",
+  "Cancelled",
+  "Stopped",
+  "Stopping",
 ]);
-const runningStatuses = new Set(['InProgress', 'Stopping']);
+const runningStatuses = new Set(["InProgress", "Stopping"]);
 
 interface FailoverResponse {
   failoverStarted: boolean;
@@ -54,14 +54,14 @@ export const handler = async (): Promise<FailoverResponse> => {
       }),
     );
     const latestExecution = executions.pipelineExecutionSummaries?.[0];
-    const latestStatus = latestExecution?.status ?? 'NoExecutions';
+    const latestStatus = latestExecution?.status ?? "NoExecutions";
     const latestExecutionId =
-      latestExecution?.pipelineExecutionId ?? 'NoExecutions';
+      latestExecution?.pipelineExecutionId ?? "NoExecutions";
 
-    await setParameter(failureCountParameter, '0');
+    await setParameter(failureCountParameter, "0");
 
-    if (latestStatus === 'Succeeded') {
-      await setParameter(lastFailoverParameter, '');
+    if (latestStatus === "Succeeded") {
+      await setParameter(lastFailoverParameter, "");
     }
 
     if (
@@ -80,13 +80,15 @@ export const handler = async (): Promise<FailoverResponse> => {
     };
   } catch (error) {
     const failures =
-      Number.parseInt(await getParameter(failureCountParameter, '0'), 10) + 1;
+      Number.parseInt(await getParameter(failureCountParameter, "0"), 10) + 1;
     await setParameter(failureCountParameter, failures.toString());
 
     if (failures >= failureThreshold) {
       return startSecondary(
-        `primary pipeline health check failed ${failures} consecutive times: ${getErrorName(error)}`,
-        'unreachable',
+        `primary pipeline health check failed ${failures} consecutive times: ${getErrorName(
+          error,
+        )}`,
+        "unreachable",
       );
     }
 
@@ -102,11 +104,11 @@ async function startSecondary(
   reason: string,
   failoverKey: string,
 ): Promise<FailoverResponse> {
-  if ((await getParameter(lastFailoverParameter, '')) === failoverKey) {
+  if ((await getParameter(lastFailoverParameter, "")) === failoverKey) {
     return {
       failoverStarted: false,
       reason,
-      message: 'failover already handled',
+      message: "failover already handled",
     };
   }
 
@@ -114,7 +116,7 @@ async function startSecondary(
     return {
       failoverStarted: false,
       reason,
-      message: 'secondary already running',
+      message: "secondary already running",
     };
   }
 
@@ -151,8 +153,8 @@ async function setDeploymentMode(reason: string): Promise<void> {
     new PutItemCommand({
       TableName: deploymentControlTableName,
       Item: {
-        LockID: { S: 'deployment-mode' },
-        Mode: { S: 'failover' },
+        LockID: { S: "deployment-mode" },
+        Mode: { S: "failover" },
         UpdatedBy: { S: secondaryPipelineName },
         Reason: { S: reason },
         UpdatedAt: { S: new Date().toISOString() },
@@ -161,7 +163,10 @@ async function setDeploymentMode(reason: string): Promise<void> {
   );
 }
 
-async function getParameter(name: string, defaultValue: string): Promise<string> {
+async function getParameter(
+  name: string,
+  defaultValue: string,
+): Promise<string> {
   try {
     const response = await ssm.send(new GetParameterCommand({ Name: name }));
     return response.Parameter?.Value ?? defaultValue;
@@ -179,7 +184,7 @@ async function setParameter(name: string, value: string): Promise<void> {
     new PutParameterCommand({
       Name: name,
       Value: value,
-      Type: 'String',
+      Type: "String",
       Overwrite: true,
     }),
   );
@@ -196,5 +201,5 @@ function mustGetEnv(name: string): string {
 }
 
 function getErrorName(error: unknown): string {
-  return error instanceof Error ? error.name : 'UnknownError';
+  return error instanceof Error ? error.name : "UnknownError";
 }

@@ -77,7 +77,7 @@ npm install
 ### 2. Bootstrap CDK (
 
 ```bash
-npx cdk bootstrap 
+npx cdk bootstrap
 ```
 
 ### 3. Deploy the Pipelines
@@ -87,6 +87,7 @@ npm run deploy -- --all
 ```
 
 The CDK app creates:
+
 - `PipelineStackPrimary` in `CDK_DEFAULT_REGION` or `ap-south-1`
 - `PipelineStackSecondary` in `SECONDARY_REGION`, the `secondaryRegion` CDK context value, or `ap-southeast-1`
 - A primary state bucket named `tf-state-file-ugi-demo-bucket` by default
@@ -114,6 +115,7 @@ The secondary pipeline is created as a standby pipeline. It does not start direc
 ## Component Details
 
 ### CodeCommit Repository (`infra-repo`)
+
 Stores all Terraform infrastructure code. Pushes to the `main` branch trigger the primary pipeline.
 
 Because CodeCommit is region-scoped and has no native replication, the primary stack also creates a CodeBuild mirror project. An EventBridge rule listens for `referenceCreated` and `referenceUpdated` events on `main`, then starts the mirror project. The mirror project uses the AWS CodeCommit Git credential helper to:
@@ -126,6 +128,7 @@ git push --mirror "$SECONDARY_REPO_URL"
 This copies branches, tags, and commit history to the secondary region repository.
 
 ### S3 Bucket (Terraform State)
+
 - Versioning enabled for state history and rollback
 - Server-side encryption (SSE-S3)
 - Public access blocked
@@ -135,6 +138,7 @@ This copies branches, tags, and commit history to the secondary region repositor
 S3 bucket names are globally unique. The primary bucket keeps the configured name `tf-state-file-ugi-demo-bucket`; the secondary bucket uses `tf-state-file-ugi-demo-bucket-<secondary-region>` unless `secondaryStateBucketName` is provided through CDK context.
 
 ### DynamoDB Global Tables
+
 - Partition key: `LockID` (String)
 - Pay-per-request billing
 - Point-in-time recovery enabled
@@ -142,22 +146,26 @@ S3 bucket names are globally unique. The primary bucket keeps the configured nam
 - `tf-deployment-control-ugi-demo-table` stores deployment mode and the global apply mutex
 
 ### IAM Roles
-| Role | Purpose | Permissions |
-|---|---|---|
-| **PipelineRole** | CodePipeline service role | CodeCommit read, CodeBuild trigger, SNS publish, IAM PassRole |
-| **CodeBuildPlanRole** | Terraform plan CodeBuild | ReadOnly access + state S3/DynamoDB read |
-| **CodeBuildApplyRole** | Terraform apply CodeBuild | Full landing zone permissions + state S3/DynamoDB full |
+
+| Role                   | Purpose                   | Permissions                                                   |
+| ---------------------- | ------------------------- | ------------------------------------------------------------- |
+| **PipelineRole**       | CodePipeline service role | CodeCommit read, CodeBuild trigger, SNS publish, IAM PassRole |
+| **CodeBuildPlanRole**  | Terraform plan CodeBuild  | ReadOnly access + state S3/DynamoDB read                      |
+| **CodeBuildApplyRole** | Terraform apply CodeBuild | Full landing zone permissions + state S3/DynamoDB full        |
 
 ### SNS Topic
+
 Sends email notifications for manual approval requests when a new plan is ready for review.
 
 ### CodeBuild Plan
+
 - Linux (Standard 7.0, medium)
 - Installs Terraform 1.9.8
 - Runs `terraform init && terraform plan`
 - Outputs plan to artifact for reference
 
 ### CodeBuild Apply
+
 - Linux (Standard 7.0, medium)
 - Installs Terraform 1.9.8
 - Runs `terraform init` with region-specific backend config
@@ -167,6 +175,7 @@ Sends email notifications for manual approval requests when a new plan is ready 
 - Outputs apply log to artifact
 
 ### CodePipeline
+
 - **Source** — CodeCommit (main branch)
 - **Plan** — CodeBuild action
 - **Approval** — Manual approval with SNS notification
@@ -177,6 +186,7 @@ Sends email notifications for manual approval requests when a new plan is ready 
 The secondary stack creates a scheduled Node.js Lambda watchdog. Every 5 minutes by default it calls `ListPipelineExecutions` for the primary pipeline in the primary region.
 
 Failover starts the secondary pipeline when either condition is true:
+
 - The latest primary pipeline execution is in a terminal failure state (`Failed`, `Cancelled`, `Stopped`, or `Stopping`)
 - The watchdog cannot reach the primary pipeline for `failoverFailureThreshold` consecutive checks, defaulting to 3
 
@@ -198,6 +208,7 @@ Lambda source code lives under `lambda/`. The failover watchdog is implemented i
 ### Active-Standby vs Active-Active
 
 The default implementation is active-standby:
+
 - Primary commits trigger primary builds and deploys
 - Primary commits are mirrored to the secondary repository
 - Secondary commits do not automatically start the secondary pipeline
@@ -235,6 +246,7 @@ Every apply build also tries to create this item before running Terraform:
 The write uses a DynamoDB conditional expression, so only one pipeline can own the apply lock at a time. The lock intentionally has no automatic expiry; if a build dies without cleanup, an operator should verify no apply is still running before manually deleting the stale lock.
 
 Failback is intentionally manual:
+
 - Stop or disable secondary applies
 - Copy/promote the known-good secondary state object back to the primary state bucket
 - Run a primary-region `terraform plan` against the promoted state
@@ -247,36 +259,40 @@ Failback is intentionally manual:
 
 After deployment, the stack exports:
 
-| Output | Description |
-|---|---|
-| `CodeCommitRepoUrl` | HTTPS URL to clone the repo |
-| `StateBucketName` | S3 bucket for Terraform state |
-| `LockTableName` | DynamoDB Global Table for Terraform state locking |
+| Output                       | Description                                               |
+| ---------------------------- | --------------------------------------------------------- |
+| `CodeCommitRepoUrl`          | HTTPS URL to clone the repo                               |
+| `StateBucketName`            | S3 bucket for Terraform state                             |
+| `LockTableName`              | DynamoDB Global Table for Terraform state locking         |
 | `DeploymentControlTableName` | DynamoDB Global Table for deployment mode and apply mutex |
-| `PlanProjectName` | CodeBuild plan project name |
-| `ApplyProjectName` | CodeBuild apply project name |
-| `PipelineName` | CodePipeline name |
-| `RegionRole` | `primary` or `secondary` |
-| `SecondaryRepoCloneUrl` | Secondary CodeCommit HTTPS URL, primary stack only |
-| `ReplicationProjectName` | CodeBuild mirror project, primary stack only |
-| `FailoverMonitorName` | Lambda watchdog, secondary stack only |
-
+| `PlanProjectName`            | CodeBuild plan project name                               |
+| `ApplyProjectName`           | CodeBuild apply project name                              |
+| `PipelineName`               | CodePipeline name                                         |
+| `RegionRole`                 | `primary` or `secondary`                                  |
+| `SecondaryRepoCloneUrl`      | Secondary CodeCommit HTTPS URL, primary stack only        |
+| `ReplicationProjectName`     | CodeBuild mirror project, primary stack only              |
+| `FailoverMonitorName`        | Lambda watchdog, secondary stack only                     |
 
 ## Security & Static Analysis (Checkov)
 
 This repository integrates **Checkov** to scan both the CDK and Terraform codebases for security and compliance issues.
 
 ### 1. Local CDK Scanning
+
 To check the CDK-generated CloudFormation templates before deploying:
+
 1. Ensure Checkov is installed locally (e.g., via `pip install checkov` or using Docker).
 2. Run:
    ```bash
    npm run checkov
    ```
+
 This synthesizes the templates and runs Checkov against the output `cdk.out/` folder using configurations in `.checkov.yaml`.
 
 ### 2. CI/CD Pipeline Scanning
+
 Checkov is integrated as an automated security gate in the CodePipeline **Plan** stage. During the CodeBuild execution:
+
 1. Checkov is installed automatically in the build container.
 2. It scans the source files (`checkov -d . --framework terraform`).
 3. If security vulnerabilities are found, the build fails, preventing the pipeline from advancing to the manual approval or apply stages.
@@ -285,13 +301,13 @@ Checkov is integrated as an automated security gate in the CodePipeline **Plan**
 
 ## Useful Commands
 
-| Command | Purpose |
-|---|---|
-| `npm run build` | Compile TypeScript |
-| `npm run test` | Run CDK assertion tests |
-| `npm run synth` | Synthesize CloudFormation template |
-| `npm run diff` | Show diff against deployed stack |
-| `npm run deploy` | Deploy the pipeline stack |
+| Command           | Purpose                                   |
+| ----------------- | ----------------------------------------- |
+| `npm run build`   | Compile TypeScript                        |
+| `npm run test`    | Run CDK assertion tests                   |
+| `npm run synth`   | Synthesize CloudFormation template        |
+| `npm run diff`    | Show diff against deployed stack          |
+| `npm run deploy`  | Deploy the pipeline stack                 |
 | `npm run checkov` | Synthesize CDK and run local Checkov scan |
 
 ---
@@ -306,4 +322,4 @@ Checkov is integrated as an automated security gate in the CodePipeline **Plan**
 
 ---
 
-*Generated on: 2026-07-02*
+_Generated on: 2026-07-02_

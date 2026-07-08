@@ -1,10 +1,10 @@
-import * as cdk from 'aws-cdk-lib';
-import * as codebuild from 'aws-cdk-lib/aws-codebuild';
-import * as codecommit from 'aws-cdk-lib/aws-codecommit';
-import * as events from 'aws-cdk-lib/aws-events';
-import * as events_targets from 'aws-cdk-lib/aws-events-targets';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import { Construct } from 'constructs';
+import * as cdk from "aws-cdk-lib";
+import * as codebuild from "aws-cdk-lib/aws-codebuild";
+import * as codecommit from "aws-cdk-lib/aws-codecommit";
+import * as events from "aws-cdk-lib/aws-events";
+import * as events_targets from "aws-cdk-lib/aws-events-targets";
+import * as iam from "aws-cdk-lib/aws-iam";
+import { Construct } from "constructs";
 
 export interface CodeCommitResourcesProps {
   repo: codecommit.Repository;
@@ -22,15 +22,10 @@ export class CodeCommitResources extends Construct {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);
-    const {
-      repo,
-      repositoryName,
-      branchName,
-      primaryRegion,
-      secondaryRegion,
-    } = props;
+    const { repo, repositoryName, branchName, primaryRegion, secondaryRegion } =
+      props;
     const secondaryRepoArn = stack.formatArn({
-      service: 'codecommit',
+      service: "codecommit",
       region: secondaryRegion,
       resource: repositoryName,
     });
@@ -38,7 +33,7 @@ export class CodeCommitResources extends Construct {
 
     this.replicationProject = new codebuild.Project(
       this,
-      'CodeCommitReplicationProject',
+      "CodeCommitReplicationProject",
       {
         description: `Mirrors ${repositoryName} commits from ${primaryRegion} to ${secondaryRegion}`,
         environment: {
@@ -51,21 +46,21 @@ export class CodeCommitResources extends Construct {
           BRANCH_NAME: { value: branchName },
         },
         buildSpec: codebuild.BuildSpec.fromObject({
-          version: '0.2',
+          version: "0.2",
           phases: {
             pre_build: {
               commands: [
                 'git config --global credential.helper "!aws codecommit credential-helper $@"',
-                'git config --global credential.UseHttpPath true',
+                "git config --global credential.UseHttpPath true",
               ],
             },
             build: {
               commands: [
-                'rm -rf /tmp/infra-repo.git',
+                "rm -rf /tmp/infra-repo.git",
                 'git clone --mirror "$PRIMARY_REPO_URL" /tmp/infra-repo.git',
-                'cd /tmp/infra-repo.git',
+                "cd /tmp/infra-repo.git",
                 'git remote set-url --push origin "$SECONDARY_REPO_URL"',
-                'git push --mirror origin',
+                "git push --mirror origin",
               ],
             },
           },
@@ -76,9 +71,9 @@ export class CodeCommitResources extends Construct {
     this.replicationProject.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
-          'codecommit:GitPull',
-          'codecommit:GetRepository',
-          'codecommit:GetBranch',
+          "codecommit:GitPull",
+          "codecommit:GetRepository",
+          "codecommit:GetBranch",
         ],
         resources: [repo.repositoryArn],
       }),
@@ -86,23 +81,23 @@ export class CodeCommitResources extends Construct {
     this.replicationProject.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
-          'codecommit:GitPush',
-          'codecommit:GetRepository',
-          'codecommit:GetBranch',
-          'codecommit:CreateBranch',
+          "codecommit:GitPush",
+          "codecommit:GetRepository",
+          "codecommit:GetBranch",
+          "codecommit:CreateBranch",
         ],
         resources: [secondaryRepoArn],
       }),
     );
 
-    new events.Rule(this, 'ReplicateOnCodeCommitChange', {
+    new events.Rule(this, "ReplicateOnCodeCommitChange", {
       description: `Replicates ${repositoryName}/${branchName} to ${secondaryRegion} after commits`,
       eventPattern: {
-        source: ['aws.codecommit'],
-        detailType: ['CodeCommit Repository State Change'],
+        source: ["aws.codecommit"],
+        detailType: ["CodeCommit Repository State Change"],
         resources: [repo.repositoryArn],
         detail: {
-          event: ['referenceCreated', 'referenceUpdated'],
+          event: ["referenceCreated", "referenceUpdated"],
           repositoryName: [repositoryName],
           referenceName: [branchName],
         },
