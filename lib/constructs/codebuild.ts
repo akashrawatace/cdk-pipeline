@@ -231,7 +231,7 @@ export class CodeBuildProjects extends Construct {
     return [
       'echo "Checking deployment mode before Terraform apply..."',
       'DEPLOYMENT_MODE=$(aws dynamodb get-item --table-name "$DEPLOYMENT_CONTROL_TABLE_NAME" --key \'{"LockID":{"S":"deployment-mode"}}\' --query "Item.Mode.S" --output text)',
-      'if [ "$DEPLOYMENT_MODE" = "None" ]; then DEPLOYMENT_MODE=primary; fi',
+      'if [ -z "$DEPLOYMENT_MODE" ] || [ "$DEPLOYMENT_MODE" = "None" ]; then DEPLOYMENT_MODE=primary; fi',
       'if [ "$DEPLOYMENT_MODE" != "$EXPECTED_DEPLOYMENT_MODE" ]; then echo "Deployment mode is $DEPLOYMENT_MODE; expected $EXPECTED_DEPLOYMENT_MODE. Refusing to apply."; exit 1; fi',
       'export APPLY_LOCK_OWNER="${AWS_REGION}:${CODEBUILD_BUILD_ID}"',
       'printf \'{"LockID":{"S":"terraform-apply-lock"},"Owner":{"S":"%s"},"Region":{"S":"%s"},"BuildId":{"S":"%s"},"AcquiredAt":{"S":"%s"}}\' "$APPLY_LOCK_OWNER" "$AWS_REGION" "$CODEBUILD_BUILD_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /tmp/apply-lock.json',
